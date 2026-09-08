@@ -1,0 +1,16 @@
+id = "yandex_music"
+version = "0.1.0"
+api_version = 1
+wasm = "yandex_music.wasm"
+search = true
+url_patterns = ["https://music.yandex.*/*"]
+allowed_hosts = ["api.music.yandex.net", "storage.mds.yandex.net", "*.storage.yandex.net"]
+
+[[auth]]
+type = "oauth_device"
+id = "oauth"
+device_code_url = "https://oauth.yandex.ru/device/code"
+token_url = "https://oauth.yandex.ru/token"
+client_id = "23cabbbdc6cd418abb4b39c32c41195d"
+client_secret = "53bc75238f0c4d08a118e51fe9203300"
+device_name = "r1pper Yandex Music Plugin"
