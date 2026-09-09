@@ -52,6 +52,7 @@ pub fn search(config: &Config, query: &str, limit: usize) -> Result<Vec<SearchRe
             artist: Some(file.username),
             album: None,
             size: Some(file.size),
+            artwork_url: None,
         })
         .collect())
 }

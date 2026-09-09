@@ -7,4 +7,5 @@ pub struct SearchResult {
     pub artist: Option<String>,
     pub album: Option<String>,
     pub size: Option<u64>,
+    pub artwork_url: Option<String>,
 }

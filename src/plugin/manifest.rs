@@ -120,6 +120,20 @@ impl PluginRegistry {
                 wasm_path: None,
             });
         }
+        if ids.insert("apple_music".into(), ()).is_none() {
+            entries.push(PluginEntry {
+                descriptor: PluginDescriptor {
+                    id: "apple_music".into(),
+                    version: env!("CARGO_PKG_VERSION").into(),
+                    url_patterns: vec!["https://music.apple.com/*".into()],
+                    allowed_hosts: Vec::new(),
+                    auth_schemes: Vec::new(),
+                    supports_search: false,
+                    manifest_path: PathBuf::from("<built-in>"),
+                },
+                wasm_path: None,
+            });
+        }
         if ids.insert("soulseek".into(), ()).is_none() {
             entries.push(PluginEntry {
                 descriptor: PluginDescriptor {
@@ -318,6 +332,7 @@ impl PluginRegistry {
                     artist: result.artist,
                     album: result.album,
                     size: result.size,
+                    artwork_url: result.artwork_url,
                 })
             })
             .collect()

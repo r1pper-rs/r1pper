@@ -101,6 +101,15 @@ impl Downloader {
                 progress,
             );
         }
+        if crate::apple_music::supports(&request.url) {
+            return crate::apple_music::download(
+                &self.config,
+                &self.ffmpeg,
+                &request.url,
+                overwrite,
+                progress,
+            );
+        }
         if crate::soulseek::supports(&request.url) {
             return crate::soulseek::download(
                 &self.config,

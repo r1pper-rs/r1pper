@@ -42,6 +42,8 @@ pub struct SearchResult {
     pub artist: Option<String>,
     pub album: Option<String>,
     pub size: Option<u64>,
+    #[serde(default)]
+    pub artwork_url: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

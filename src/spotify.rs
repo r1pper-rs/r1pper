@@ -1,4 +1,4 @@
-use std::{io::Write, path::Path};
+use std::{collections::BTreeMap, io::Write, path::Path};
 
 use librespot::{
     core::{SpotifyUri, authentication::Credentials, session::Session},
@@ -12,7 +12,7 @@ use librespot::{
         player::Player,
     },
 };
-use librespot_oauth::DeviceAuthClientBuilder;
+use librespot_oauth::{DeviceAuthClient, DeviceAuthClientBuilder, DeviceAuthorization};
 use tempfile::{Builder, NamedTempFile};
 
 use crate::{
@@ -22,12 +22,30 @@ use crate::{
     error::{Error, Result},
     output::{self, OutputTarget},
     pipeline::{DownloadBatchResult, DownloadEvent, DownloadResult},
-    plugin::SourceMetadata,
+    plugin::{MediaCandidate, SourceMetadata},
     search::SearchResult,
 };
 
 const CLIENT_ID: &str = "65b708073fc0480ea92a077233ca87bd";
 const SCOPES: &[&str] = &["streaming"];
+
+/// A pending Spotify device authorization that can be displayed by a UI.
+pub struct DeviceLogin {
+    client: DeviceAuthClient,
+    authorization: DeviceAuthorization,
+    pub user_code: String,
+    pub verification_url: String,
+}
+
+impl std::fmt::Debug for DeviceLogin {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("DeviceLogin")
+            .field("user_code", &self.user_code)
+            .field("verification_url", &self.verification_url)
+            .finish_non_exhaustive()
+    }
+}
 
 pub fn supports(url: &str) -> bool {
     spotify_source(url).is_some()
@@ -64,6 +82,12 @@ pub fn search(config: &Config, query: &str, limit: usize) -> Result<Vec<SearchRe
     #[derive(serde::Deserialize)]
     struct Album {
         name: String,
+        #[serde(default)]
+        images: Vec<Image>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Image {
+        url: String,
     }
     let request_url = format!(
         "https://api.spotify.com/v1/search?{}",
@@ -97,18 +121,39 @@ pub fn search(config: &Config, query: &str, limit: usize) -> Result<Vec<SearchRe
             }),
             album: Some(track.album.name),
             size: None,
+            artwork_url: track.album.images.into_iter().next().map(|image| image.url),
         })
         .collect())
 }
 
 pub fn login(config_path: &Path) -> Result<()> {
+    let login = begin_login()?;
+    finish_login(login, config_path)
+}
+
+/// Requests a Spotify device code without starting the blocking approval poll.
+pub fn begin_login() -> Result<DeviceLogin> {
     let client = DeviceAuthClientBuilder::new(CLIENT_ID, SCOPES.to_vec())
         .build()
         .map_err(|error| {
             Error::Message(format!("could not create Spotify device client: {error}"))
         })?;
-    let token = client
-        .get_access_token()
+    let authorization = client
+        .request_device_code()
+        .map_err(|error| Error::Message(format!("Spotify device authorization failed: {error}")))?;
+    Ok(DeviceLogin {
+        user_code: authorization.user_code().into(),
+        verification_url: authorization.url().into(),
+        client,
+        authorization,
+    })
+}
+
+/// Waits for approval of a previously requested Spotify device code and saves its tokens.
+pub fn finish_login(login: DeviceLogin, config_path: &Path) -> Result<()> {
+    let token = login
+        .client
+        .poll_for_token(&login.authorization)
         .map_err(|error| Error::Message(format!("Spotify device authorization failed: {error}")))?;
     Config::save_auth_credentials(
         config_path,
@@ -183,8 +228,35 @@ pub fn download(
             progress(DownloadEvent::Skipped(destination.clone()));
         } else {
             let (source, _) = download_track(track_id, access_token)?;
+            let artwork = if config.audio.embed_artwork {
+                metadata
+                    .artwork_url
+                    .as_ref()
+                    .map(|url| {
+                        crate::download::fetch(
+                            &MediaCandidate {
+                                url: url.clone(),
+                                headers: BTreeMap::new(),
+                                mime_type: None,
+                                codec: None,
+                            },
+                            config.temporary_directory.as_deref(),
+                            &Default::default(),
+                            None,
+                        )
+                    })
+                    .transpose()?
+            } else {
+                None
+            };
             progress(DownloadEvent::Processing);
-            ffmpeg.transcode(source.path(), &destination, &config.audio, &metadata, None)?;
+            ffmpeg.transcode(
+                source.path(),
+                &destination,
+                &config.audio,
+                &metadata,
+                artwork.as_ref().map(|file| file.path()),
+            )?;
             progress(DownloadEvent::Finished(destination.clone()));
         }
         downloads.push(DownloadResult {

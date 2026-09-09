@@ -1,0 +1,16 @@
+[package]
+name = "r1pper-gui"
+version = "0.1.0"
+edition = "2024"
+description = "Desktop GUI for r1pper"
+
+[[bin]]
+name = "r1pper-gui"
+path = "src/main.rs"
+
+[dependencies]
+iced = { version = "0.13", features = ["tokio", "image"] }
+r1pper = { path = ".." }
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+tokio = { version = "1", features = ["rt-multi-thread"] }
+toml = "0.9"

@@ -1,5 +1,6 @@
 //! Reusable audio download pipeline and source-plugin host.
 
+pub mod apple_music;
 pub mod audio;
 pub mod auth;
 pub mod config;

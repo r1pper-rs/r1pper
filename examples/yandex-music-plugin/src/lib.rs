@@ -304,8 +304,12 @@ pub fn search(Json(input): Json<SearchRequest>) -> FnResult<Json<SearchResponse>
         .into_iter()
         .filter_map(|track| {
             let id = track.id?;
-            let title = track.title.unwrap_or_else(|| "Unknown track".into());
-            let artist = artist_names(&track.artists);
+            let title = track
+                .title
+                .filter(|title| !title.trim().is_empty())
+                .unwrap_or_else(|| "Unknown track".into());
+            let artist = artist_names(&track.artists)
+                .filter(|artist| !artist.trim().is_empty());
             Some(SearchResult {
                 title,
                 url: format!("https://music.yandex.ru/track/{id}"),
