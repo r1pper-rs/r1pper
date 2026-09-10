@@ -2,6 +2,7 @@
 name = "r1pper-gui"
 version = "0.1.0"
 edition = "2024"
+authors = ["nyakaii", "r1pper developers"]
 description = "Desktop GUI for r1pper"
 
 [[bin]]
