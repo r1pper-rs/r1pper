@@ -57,6 +57,15 @@ refresh_token = "refresh-token"
 
 `output_template` is relative to `output_directory` and creates its parent directories automatically. Available placeholders are `{artist}`, `{album_artist}`, `{album}`, `{title}`, `{track}`, `{track:02}`, `{disc}`, and `{ext}`. It must contain `{ext}`. For a flat layout, use `"{artist} - {title}.{ext}"`.
 
+## GUI
+<img width="833" height="1280" alt="1000060722" src="https://github.com/user-attachments/assets/1d7a89ec-6eb7-4795-a66a-026edacebc03" />
+
+Run GUI with following command:
+```sh
+cargo run --manifest-path ./r1pper-gui/Cargo.toml
+```
+
+
 ## Built-in plugins
 ### Spotify
 
@@ -68,6 +77,18 @@ r1pper download https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC
 r1pper download spotify:track:4uLU6hMCjMI75M1A2tKUQC
 ```
 
+
+### Apple Music
+
+Apple Music is a built-in native plugin.
+
+**Note:** plugin requires running [wrapper-lite](https://github.com/WorldObservationLog/wrapper/tree/lite). Provide wrapper-lite endpoint in the configuration with media user token. Instructions how to get it [here](https://github.com/zhaarey/apple-music-downloader#get-media-user-token).
+
+```toml
+[plugin_config.apple_music]
+template_endpoint = "http://127.0.0.1:12340/key"
+music_user_token = "your-token"
+```
 
 ### Soulseek
 
