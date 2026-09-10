@@ -231,32 +231,31 @@ jobs:
 
   build-flatpak:
     runs-on: ubuntu-24.04
-    needs: [build-linux]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download Linux binaries
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ env.BINARY_NAME }}-linux-x86_64
-          path: dist
+      - name: Generate cargo vendor sources for Flatpak
+        # Verify against https://github.com/flatpak/flatpak-builder-tools/tree/master/cargo
+        # if this ever fails — the script name/flags there can change.
+        run: |
+          python3 -m pip install --user aiohttp toml
+          curl -sSL -o flatpak-cargo-generator.py https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
+          python3 flatpak-cargo-generator.py Cargo.lock -o packaging/flatpak/generated-sources.json
+
+      - name: Point manifest at this ref
+        run: sed -i "s|tag: .*|tag: ${{ github.ref_name }}|" packaging/flatpak/io.github.YOUR_ORG.r1pper.yml
 
       - name: Install flatpak-builder
         run: |
           sudo apt-get update
           sudo apt-get install --yes flatpak flatpak-builder
           sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          sudo flatpak install --system --noninteractive flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
-
-      - name: Stage binaries next to manifest
-        # The manifest packages prebuilt binaries rather than building from source inside
-        # the sandbox, so the exes need to sit alongside packaging/flatpak/*.yml first.
-        run: |
-          cp dist/${{ env.BINARY_NAME }}-linux-x86_64 packaging/flatpak/${{ env.BINARY_NAME }}
-          cp dist/${{ env.BINARY_NAME_GUI }}-linux-x86_64 packaging/flatpak/${{ env.BINARY_NAME_GUI }}
-          chmod +x packaging/flatpak/${{ env.BINARY_NAME }} packaging/flatpak/${{ env.BINARY_NAME_GUI }}
+          sudo flatpak install --system --noninteractive flathub \
+            org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08 org.freedesktop.Sdk.Extension.rust-stable//24.08
 
       - name: Build flatpak
+        # Builds Rust from source inside the sandbox using the vendored deps from
+        # generated-sources.json — no prebuilt binaries, no network access needed.
         run: flatpak-builder --force-clean --repo=repo build-dir packaging/flatpak/io.github.YOUR_ORG.r1pper.yml
 
       - name: Bundle single-file flatpak
@@ -265,31 +264,58 @@ jobs:
           flatpak build-bundle repo dist/flatpak/${{ env.BINARY_NAME }}-linux-x86_64.flatpak io.github.YOUR_ORG.r1pper
 
       - name: Upload flatpak bundle
+        # Attached to the GitHub release for people who don't use Flathub:
+        #   flatpak install ./r1pper-linux-x86_64.flatpak
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.BINARY_NAME }}-linux-flatpak
           if-no-files-found: error
           path: dist/flatpak/*.flatpak
 
-      - name: Update repo metadata
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-        run: |
-          flatpak build-update-repo --title="r1pper" repo
-          cp packaging/flatpak/r1pper.flatpakrepo repo/r1pper.flatpakrepo
+  publish-flathub:
+    runs-on: ubuntu-24.04
+    needs: [build-flatpak]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Publish Flatpak repo to GitHub Pages
-        # Hosts a self-serve repo at https://YOUR_ORG.github.io/r1pper/flatpak/ so users can:
-        #   flatpak remote-add --if-not-exists r1pper https://YOUR_ORG.github.io/r1pper/flatpak/r1pper.flatpakrepo
-        #   flatpak install r1pper io.github.YOUR_ORG.r1pper
-        # This is separate from submitting to the official Flathub store, which is a one-time
-        # manual PR to github.com/flathub/flathub — not something CI can do on your behalf.
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Generate cargo vendor sources for Flatpak
+        run: |
+          python3 -m pip install --user aiohttp toml
+          curl -sSL -o flatpak-cargo-generator.py https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
+          python3 flatpak-cargo-generator.py Cargo.lock -o generated-sources.json
+
+      - name: Point manifest at this tag
+        run: sed -i "s|tag: .*|tag: ${{ github.ref_name }}|" packaging/flatpak/io.github.YOUR_ORG.r1pper.yml
+
+      - name: Checkout Flathub metadata repo
+        # Requires the app to already be accepted onto Flathub, with a metadata repo at
+        # github.com/flathub/io.github.YOUR_ORG.r1pper, and a deploy key with write access
+        # to it stored as the FLATHUB_DEPLOY_KEY secret. This is a one-time manual setup —
+        # see https://docs.flathub.org/docs/for-app-authors/submission
+        uses: actions/checkout@v4
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: repo
-          destination_dir: flatpak
-          keep_files: true
+          repository: flathub/io.github.YOUR_ORG.r1pper
+          ssh-key: ${{ secrets.FLATHUB_DEPLOY_KEY }}
+          path: flathub-repo
+
+      - name: Push manifest + vendor sources to Flathub
+        # Flathub's own buildbot watches this repo's default branch: a push here triggers
+        # a from-source rebuild and publish on their end. Nothing further to do from r1pper's
+        # own CI — this step is the entire "publish" action.
+        run: |
+          cp packaging/flatpak/io.github.YOUR_ORG.r1pper.yml flathub-repo/
+          cp generated-sources.json flathub-repo/
+          cd flathub-repo
+          git config user.name "r1pper release bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add io.github.YOUR_ORG.r1pper.yml generated-sources.json
+          if git diff --cached --quiet; then
+            echo "No manifest changes for this release"
+          else
+            git commit -m "Release ${{ github.ref_name }}"
+            git push origin HEAD:master
+          fi
 
   release:
     runs-on: ubuntu-24.04
