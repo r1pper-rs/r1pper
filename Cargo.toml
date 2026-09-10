@@ -1,5 +1,7 @@
 [package]
 name = "r1pper"
+authors = ["nyakaii", "r1pper developers"]
+description = "Audio r1pper fro ev3rything!"
 version = "0.1.0"
 edition = "2024"
 
