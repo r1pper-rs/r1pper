@@ -61,6 +61,61 @@ jobs:
           if-no-files-found: error
           path: dist/*
 
+  build-macos-installer:
+    runs-on: macos-14
+    needs: [build-macos]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download macOS binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-macos-aarch64
+          path: dist
+
+      - name: Extract version
+        id: get_version
+        run: |
+          VERSION=$(sed -nE 's/^version\s*=\s*"([^"]+)"/\1/p' Cargo.toml | head -n1)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Assemble pkg payload
+        run: |
+          mkdir -p pkgroot/usr/local/bin
+          cp dist/${{ env.BINARY_NAME }}-macos-aarch64 pkgroot/usr/local/bin/${{ env.BINARY_NAME }}
+          cp dist/${{ env.BINARY_NAME_GUI }}-macos-aarch64 pkgroot/usr/local/bin/${{ env.BINARY_NAME_GUI }}
+          chmod +x pkgroot/usr/local/bin/*
+
+      - name: Build component package
+        run: |
+          mkdir -p dist/pkg
+          pkgbuild \
+            --root pkgroot \
+            --identifier org.YOUR_ORG.r1pper \
+            --version ${{ steps.get_version.outputs.version }} \
+            --install-location / \
+            dist/pkg/r1pper-component.pkg
+
+      - name: Build product package
+        # packaging/macos/distribution.xml drives the productbuild UI. A minimal starting
+        # point is committed at that path; regenerate it if you add a welcome/license screen with:
+        #   productbuild --synthesize --package dist/pkg/r1pper-component.pkg packaging/macos/distribution.xml
+        run: |
+          productbuild \
+            --distribution packaging/macos/distribution.xml \
+            --package-path dist/pkg \
+            dist/pkg/${{ env.BINARY_NAME }}-macos-aarch64.pkg
+
+      - name: Upload pkg
+        # Unsigned pkg — no Apple Developer ID involved. Gatekeeper shows an
+        # "unidentified developer" warning on install; users right-click → Open, or
+        # run `sudo installer -pkg r1pper-macos-aarch64.pkg -target /`.
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-macos-installer-aarch64
+          if-no-files-found: error
+          path: dist/pkg/${{ env.BINARY_NAME }}-macos-aarch64.pkg
+
   build-windows:
     runs-on: windows-2022
     steps:
@@ -87,6 +142,16 @@ jobs:
   build-windows-installer:
     runs-on: windows-2022
     needs: [build-windows]
+    strategy:
+      fail-fast: false
+      matrix:
+        # crate: the workspace package name passed to `cargo wix`
+        # choco_id: the Chocolatey package id / msi file stem for that crate
+        include:
+          - crate: r1pper
+            choco_id: r1pper
+          - crate: r1pper-gui
+            choco_id: r1pper-gui
     steps:
       - uses: actions/checkout@v4
 
@@ -112,17 +177,18 @@ jobs:
           Copy-Item "dist/${{ env.BINARY_NAME }}-windows-x86_64.exe" "target/release/${{ env.BINARY_NAME }}.exe"
           Copy-Item "dist/${{ env.BINARY_NAME_GUI }}-windows-x86_64.exe" "target/release/${{ env.BINARY_NAME_GUI }}.exe"
 
-      - name: Build MSI installer
-        # Requires wix/main.wxs committed to the repo. Generate it once locally with:
+      - name: Build MSI installer (${{ matrix.crate }})
+        # Each crate has its own wix/main.wxs, generated once locally with:
         #   cargo install cargo-wix --locked
-        #   cargo wix init
-        # then edit wix/main.wxs to include both the CLI and GUI binaries, and commit it.
+        #   cargo wix init --package r1pper
+        #   cargo wix init --package r1pper-gui
+        # then committed to the repo (one wxs per crate directory, no collision).
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist/msi
-          cargo wix package --nocapture --output dist/msi/
+          cargo wix package --package ${{ matrix.crate }} --nocapture --output dist/msi/
           $msi = Get-ChildItem dist/msi/*.msi | Select-Object -First 1
-          Rename-Item $msi.FullName "${{ env.BINARY_NAME }}-windows-x86_64.msi"
+          Rename-Item $msi.FullName "${{ matrix.choco_id }}-windows-x86_64.msi"
 
       - name: Extract version
         id: get_version
@@ -131,29 +197,29 @@ jobs:
           $version = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"(.+)"$').Matches[0].Groups[1].Value
           echo "version=$version" >> $env:GITHUB_OUTPUT
 
-      - name: Assemble Chocolatey package
-        # See packaging/chocolatey/ for the nuspec + install/uninstall scripts (Chocolatey MSI package pattern).
+      - name: Assemble Chocolatey package (${{ matrix.crate }})
+        # See packaging/chocolatey/<choco_id>/ for the nuspec + install/uninstall scripts.
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path choco/tools
-          Copy-Item packaging/chocolatey/${{ env.BINARY_NAME }}.nuspec choco/${{ env.BINARY_NAME }}.nuspec
-          Copy-Item packaging/chocolatey/tools/*.ps1 choco/tools/
-          Copy-Item "dist/msi/${{ env.BINARY_NAME }}-windows-x86_64.msi" "choco/tools/${{ env.BINARY_NAME }}.msi"
+          Copy-Item packaging/chocolatey/${{ matrix.choco_id }}/${{ matrix.choco_id }}.nuspec choco/${{ matrix.choco_id }}.nuspec
+          Copy-Item packaging/chocolatey/${{ matrix.choco_id }}/tools/*.ps1 choco/tools/
+          Copy-Item "dist/msi/${{ matrix.choco_id }}-windows-x86_64.msi" "choco/tools/${{ matrix.choco_id }}.msi"
 
-      - name: Pack Chocolatey package
+      - name: Pack Chocolatey package (${{ matrix.crate }})
         shell: pwsh
-        run: choco pack choco/${{ env.BINARY_NAME }}.nuspec --version ${{ steps.get_version.outputs.version }} --outputdirectory dist/choco
+        run: choco pack choco/${{ matrix.choco_id }}.nuspec --version ${{ steps.get_version.outputs.version }} --outputdirectory dist/choco
 
-      - name: Upload MSI + Chocolatey package
+      - name: Upload MSI + Chocolatey package (${{ matrix.crate }})
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.BINARY_NAME }}-windows-installer-x86_64
+          name: ${{ matrix.choco_id }}-windows-installer-x86_64
           if-no-files-found: error
           path: |
-            dist/msi/*.msi
+            dist/msi/${{ matrix.choco_id }}-windows-x86_64.msi
             dist/choco/*.nupkg
 
-      - name: Push to Chocolatey
+      - name: Push to Chocolatey (${{ matrix.crate }})
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
@@ -163,10 +229,72 @@ jobs:
           choco apikey --api-key $env:CHOCOLATEY_API_KEY --source https://push.chocolatey.org/
           choco push $pkg.FullName --source https://push.chocolatey.org/
 
+  build-flatpak:
+    runs-on: ubuntu-24.04
+    needs: [build-linux]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Linux binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-linux-x86_64
+          path: dist
+
+      - name: Install flatpak-builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes flatpak flatpak-builder
+          sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          sudo flatpak install --system --noninteractive flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
+
+      - name: Stage binaries next to manifest
+        # The manifest packages prebuilt binaries rather than building from source inside
+        # the sandbox, so the exes need to sit alongside packaging/flatpak/*.yml first.
+        run: |
+          cp dist/${{ env.BINARY_NAME }}-linux-x86_64 packaging/flatpak/${{ env.BINARY_NAME }}
+          cp dist/${{ env.BINARY_NAME_GUI }}-linux-x86_64 packaging/flatpak/${{ env.BINARY_NAME_GUI }}
+          chmod +x packaging/flatpak/${{ env.BINARY_NAME }} packaging/flatpak/${{ env.BINARY_NAME_GUI }}
+
+      - name: Build flatpak
+        run: flatpak-builder --force-clean --repo=repo build-dir packaging/flatpak/io.github.YOUR_ORG.r1pper.yml
+
+      - name: Bundle single-file flatpak
+        run: |
+          mkdir -p dist/flatpak
+          flatpak build-bundle repo dist/flatpak/${{ env.BINARY_NAME }}-linux-x86_64.flatpak io.github.YOUR_ORG.r1pper
+
+      - name: Upload flatpak bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-linux-flatpak
+          if-no-files-found: error
+          path: dist/flatpak/*.flatpak
+
+      - name: Update repo metadata
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        run: |
+          flatpak build-update-repo --title="r1pper" repo
+          cp packaging/flatpak/r1pper.flatpakrepo repo/r1pper.flatpakrepo
+
+      - name: Publish Flatpak repo to GitHub Pages
+        # Hosts a self-serve repo at https://YOUR_ORG.github.io/r1pper/flatpak/ so users can:
+        #   flatpak remote-add --if-not-exists r1pper https://YOUR_ORG.github.io/r1pper/flatpak/r1pper.flatpakrepo
+        #   flatpak install r1pper io.github.YOUR_ORG.r1pper
+        # This is separate from submitting to the official Flathub store, which is a one-time
+        # manual PR to github.com/flathub/flathub — not something CI can do on your behalf.
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: repo
+          destination_dir: flatpak
+          keep_files: true
+
   release:
     runs-on: ubuntu-24.04
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: [build-linux, build-macos, build-windows-installer]
+    needs: [build-linux, build-macos, build-macos-installer, build-windows-installer, build-flatpak]
     steps:
       - uses: actions/checkout@v4
 
@@ -176,10 +304,22 @@ jobs:
           name: ${{ env.BINARY_NAME }}-linux-x86_64
           path: prepare/
 
+      - name: Download Linux flatpak bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-linux-flatpak
+          path: prepare/
+
       - name: Download macOS artifact
         uses: actions/download-artifact@v4
         with:
           name: ${{ env.BINARY_NAME }}-macos-aarch64
+          path: prepare/
+
+      - name: Download macOS installer pkg
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-macos-installer-aarch64
           path: prepare/
 
       - name: Download Windows binaries
@@ -188,16 +328,22 @@ jobs:
           name: ${{ env.BINARY_NAME }}-windows-x86_64
           path: prepare/
 
-      - name: Download Windows installer + Chocolatey package
+      - name: Download CLI installer + Chocolatey package
         uses: actions/download-artifact@v4
         with:
           name: ${{ env.BINARY_NAME }}-windows-installer-x86_64
           path: prepare/
 
+      - name: Download GUI installer + Chocolatey package
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME_GUI }}-windows-installer-x86_64
+          path: prepare/
+
       - name: Prepare release assets
         run: |
           mkdir -p upload
-          find prepare -type f \( -name "*.msi" -o -name "*.nupkg" -o -name "${{ env.BINARY_NAME }}-*" -o -name "${{ env.BINARY_NAME_GUI }}-*" \) -exec cp {} upload/ \;
+          find prepare -type f \( -name "*.msi" -o -name "*.nupkg" -o -name "*.pkg" -o -name "*.flatpak" -o -name "${{ env.BINARY_NAME }}-*" -o -name "${{ env.BINARY_NAME_GUI }}-*" \) -exec cp {} upload/ \;
 
       - name: Extract version
         id: get_version
