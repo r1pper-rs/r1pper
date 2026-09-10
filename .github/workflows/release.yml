@@ -287,7 +287,8 @@ jobs:
           python3 flatpak-cargo-generator.py Cargo.lock -o generated-sources.json
 
       - name: Point manifest at this tag
-        run: sed -i "s|tag: .*|tag: ${{ github.ref_name }}|" packaging/flatpak/io.github.YOUR_ORG.r1pper.yml
+        run: |
+          sed -i "s|tag: .*|tag: ${{ github.ref_name }}|" packaging/flatpak/io.github.YOUR_ORG.r1pper.yml
 
       - name: Checkout Flathub metadata repo
         # Requires the app to already be accepted onto Flathub, with a metadata repo at
