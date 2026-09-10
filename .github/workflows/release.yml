@@ -243,7 +243,8 @@ jobs:
           python3 flatpak-cargo-generator.py Cargo.lock -o packaging/flatpak/generated-sources.json
 
       - name: Point manifest at this ref
-        run: sed -i "s|tag: .*|tag: ${{ github.ref_name }}|" packaging/flatpak/io.github.YOUR_ORG.r1pper.yml
+        run: | 
+         sed -i 's|tag: .*|tag: ${{ github.ref_name }}|' packaging/flatpak/io.github.ripteam.r1pper.yml
 
       - name: Install flatpak-builder
         run: |
