@@ -82,7 +82,7 @@ r1pper download spotify:track:4uLU6hMCjMI75M1A2tKUQC
 
 Apple Music is a built-in native plugin.
 
-**Note:** plugin requires running [wrapper-lite](https://github.com/WorldObservationLog/wrapper/tree/lite). Provide wrapper-lite endpoint in the configuration with media user token. Instructions how to get it [here](https://github.com/zhaarey/apple-music-downloader#get-media-user-token).
+**Note:** plugin requires running [wrapper-lite](https://github.com/WorldObservationLog/wrapper/tree/lite). Provide wrapper-lite endpoint in the configuration with media user token. Instructions how to get it [here](https://github.com/zhaarey/apple-music-downloader#get-media-user-token). Otherwise, you will receive a 30-sec preview.
 
 ```toml
 [plugin_config.apple_music]
