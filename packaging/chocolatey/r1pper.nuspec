@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>r1pper</id>
+    <!-- version is overridden at pack time via `choco pack --version X.Y.Z` in CI -->
+    <version>0.1.0</version>
+    <title>r1pper</title>
+    <authors>r1pper developers</authors>
+    <owners>r1pper developers</owners>
+    <projectUrl>https://github.com/r1pper-rs/r1pper</projectUrl>
+    <licenseUrl>https://github.com/r1pper-rs/r1pper/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>Audio r1pper for ev3rything.</description>
+    <tags>r1pper cli gui rust</tags>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>
