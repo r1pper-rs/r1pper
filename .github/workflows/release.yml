@@ -1,0 +1,216 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - v*
+  workflow_dispatch:
+
+env:
+  BINARY_NAME: r1pper
+  BINARY_NAME_GUI: r1pper-gui
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install --yes libasound2-dev libegl1-mesa-dev libwayland-dev libxkbcommon-dev pkg-config
+
+      - name: Build binaries
+        run: cargo build --release --workspace
+
+      - name: Stage binaries
+        run: |
+          mkdir -p dist
+          cp target/release/${{ env.BINARY_NAME }} dist/${{ env.BINARY_NAME }}-linux-x86_64
+          cp target/release/${{ env.BINARY_NAME_GUI }} dist/${{ env.BINARY_NAME_GUI }}-linux-x86_64
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-linux-x86_64
+          if-no-files-found: error
+          path: dist/*
+
+  build-macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build binaries
+        run: cargo build --release --workspace
+
+      - name: Stage binaries
+        run: |
+          mkdir -p dist
+          cp target/release/${{ env.BINARY_NAME }} dist/${{ env.BINARY_NAME }}-macos-aarch64
+          cp target/release/${{ env.BINARY_NAME_GUI }} dist/${{ env.BINARY_NAME_GUI }}-macos-aarch64
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-macos-aarch64
+          if-no-files-found: error
+          path: dist/*
+
+  build-windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build binaries
+        run: cargo build --release --workspace
+
+      - name: Stage binaries
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          Copy-Item "target/release/${{ env.BINARY_NAME }}.exe" "dist/${{ env.BINARY_NAME }}-windows-x86_64.exe"
+          Copy-Item "target/release/${{ env.BINARY_NAME_GUI }}.exe" "dist/${{ env.BINARY_NAME_GUI }}-windows-x86_64.exe"
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-windows-x86_64
+          if-no-files-found: error
+          path: dist/*
+
+  build-windows-installer:
+    runs-on: windows-2022
+    needs: [build-windows]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Windows binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-windows-x86_64
+          path: dist
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install WiX Toolset and cargo-wix
+        shell: pwsh
+        run: |
+          choco install wixtoolset -y
+          cargo install cargo-wix --locked
+
+      - name: Restore binaries for cargo-wix
+        # cargo-wix reads from target/release, so put the built exes back where it expects them
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path target/release
+          Copy-Item "dist/${{ env.BINARY_NAME }}-windows-x86_64.exe" "target/release/${{ env.BINARY_NAME }}.exe"
+          Copy-Item "dist/${{ env.BINARY_NAME_GUI }}-windows-x86_64.exe" "target/release/${{ env.BINARY_NAME_GUI }}.exe"
+
+      - name: Build MSI installer
+        # Requires wix/main.wxs committed to the repo. Generate it once locally with:
+        #   cargo install cargo-wix --locked
+        #   cargo wix init
+        # then edit wix/main.wxs to include both the CLI and GUI binaries, and commit it.
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/msi
+          cargo wix package --nocapture --output dist/msi/
+          $msi = Get-ChildItem dist/msi/*.msi | Select-Object -First 1
+          Rename-Item $msi.FullName "${{ env.BINARY_NAME }}-windows-x86_64.msi"
+
+      - name: Extract version
+        id: get_version
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"(.+)"$').Matches[0].Groups[1].Value
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Assemble Chocolatey package
+        # See packaging/chocolatey/ for the nuspec + install/uninstall scripts (Chocolatey MSI package pattern).
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path choco/tools
+          Copy-Item packaging/chocolatey/${{ env.BINARY_NAME }}.nuspec choco/${{ env.BINARY_NAME }}.nuspec
+          Copy-Item packaging/chocolatey/tools/*.ps1 choco/tools/
+          Copy-Item "dist/msi/${{ env.BINARY_NAME }}-windows-x86_64.msi" "choco/tools/${{ env.BINARY_NAME }}.msi"
+
+      - name: Pack Chocolatey package
+        shell: pwsh
+        run: choco pack choco/${{ env.BINARY_NAME }}.nuspec --version ${{ steps.get_version.outputs.version }} --outputdirectory dist/choco
+
+      - name: Upload MSI + Chocolatey package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-windows-installer-x86_64
+          if-no-files-found: error
+          path: |
+            dist/msi/*.msi
+            dist/choco/*.nupkg
+
+      - name: Push to Chocolatey
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
+        run: |
+          $pkg = Get-ChildItem dist/choco/*.nupkg | Select-Object -First 1
+          choco apikey --api-key $env:CHOCOLATEY_API_KEY --source https://push.chocolatey.org/
+          choco push $pkg.FullName --source https://push.chocolatey.org/
+
+  release:
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [build-linux, build-macos, build-windows-installer]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-linux-x86_64
+          path: prepare/
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-macos-aarch64
+          path: prepare/
+
+      - name: Download Windows binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-windows-x86_64
+          path: prepare/
+
+      - name: Download Windows installer + Chocolatey package
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-windows-installer-x86_64
+          path: prepare/
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p upload
+          find prepare -type f \( -name "*.msi" -o -name "*.nupkg" -o -name "${{ env.BINARY_NAME }}-*" -o -name "${{ env.BINARY_NAME_GUI }}-*" \) -exec cp {} upload/ \;
+
+      - name: Extract version
+        id: get_version
+        run: |
+          VERSION=$(sed -nE 's/^version\s*=\s*"([^"]+)"/\1/p' Cargo.toml | head -n1)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: v${{ steps.get_version.outputs.version }}
+          tag_name: v${{ steps.get_version.outputs.version }}
+          files: upload/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          draft: true
