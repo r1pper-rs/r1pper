@@ -44,10 +44,19 @@ fn main() -> iced::Result {
         .window(iced::window::Settings {
             size: iced::Size::new(500.0, 550.0),
             min_size: Some(iced::Size::new(420.0, 460.0)),
-            platform_specific: iced::window::settings::PlatformSpecific {
-                title_hidden: true,
-                titlebar_transparent: true,
-                fullsize_content_view: true,
+            platform_specific: {
+              #[cfg(target_os = "macos")]
+              {
+                iced::window::settings::PlatformSpecific {
+                 title_hidden: true,
+                 titlebar_transparent: true,
+                 fullsize_content_view: true,
+                }
+              }
+              #[cfg(not(target_os = "macos"))]
+              {
+                  iced::window::settings::PlatformSpecific::default()
+              }
             },
             ..Default::default()
         })
