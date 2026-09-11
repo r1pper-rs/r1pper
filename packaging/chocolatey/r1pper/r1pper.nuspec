@@ -2,7 +2,6 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
   <metadata>
     <id>r1pper</id>
-    <!-- version is overridden at pack time via `choco pack --version X.Y.Z` in CI -->
     <version>0.0.0</version>
     <title>r1pper (CLI)</title>
     <authors>r1pper developers</authors>
