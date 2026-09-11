@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="1">
+    <title>r1pper</title>
+    <organization>org.ripperdevs.r1pper</organization>
+    <domains enable_localSystem="true"/>
+    <options customize="never" require-scripts="false" rootVolumeOnly="true"/>
+    <choices-outline>
+        <line choice="default">
+            <line choice="org.ripperdevs.r1pper"/>
+        </line>
+    </choices-outline>
+    <choice id="default"/>
+    <choice id="org.ripperdevs.r1pper" visible="false">
+        <pkg-ref id="org.ripperdevs.r1pper"/>
+    </choice>
+    <pkg-ref id="org.ripperdevs.r1pper" version="1.0" onConclusion="none">r1pper-component.pkg</pkg-ref>
+</installer-gui-script>

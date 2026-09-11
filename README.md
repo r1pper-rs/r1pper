@@ -1,5 +1,5 @@
 # r1pper
-> R1P EV3RYTH1NG!
+> AUDIO D0WNLOADER F0R EV3RYTHING!
 
 `r1pper` is a modular audio downloader. Pronounces similar as reaper. [Subscribe to our Telegram!](https://t.me/r1pper_rs)
 
