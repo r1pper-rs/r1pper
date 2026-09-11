@@ -3,6 +3,10 @@
 
 `r1pper` is a modular audio downloader. Pronounces similar as reaper. [Subscribe to our Telegram!](https://t.me/r1pper_rs)
 
+## Installation
+From releases page: [DOWNLOAD](https://github.com/r1pper-rs/r1pper/releases/latest)
+From `chocolatey`: `choco install r1pper` or `choco install r1pper-gui`
+
 ## Requirements
 
 - FFmpeg available as `ffmpeg`, or supplied through `FfmpegRunner::new` when using the Rust API.
