@@ -5,6 +5,7 @@
 
 ## Installation
 From releases page: [DOWNLOAD](https://github.com/r1pper-rs/r1pper/releases/latest)
+
 From `chocolatey`: `choco install r1pper` or `choco install r1pper-gui`
 
 ## Requirements
