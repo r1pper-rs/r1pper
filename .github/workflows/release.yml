@@ -226,7 +226,8 @@ jobs:
           python3 flatpak-cargo-generator.py Cargo.lock -o packaging/flatpak/generated-sources.json
 
       - name: Point manifest at this ref
-        run: sed -i "s|tag: .*|tag: ${{ github.ref_name }}|" packaging/flatpak/io.github.ripper-rs.r1pper.yml
+        run: |
+          sed -i "s|tag: .*|tag: ${{ github.ref_name }}|" packaging/flatpak/io.github.ripper-rs.r1pper.yml
 
       - name: Install flatpak-builder
         run: |
@@ -237,8 +238,6 @@ jobs:
             org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08 org.freedesktop.Sdk.Extension.rust-stable//24.08
 
       - name: Build flatpak
-        # Builds Rust from source inside the sandbox using the vendored deps from
-        # generated-sources.json — no prebuilt binaries, no network access needed.
         run: flatpak-builder --force-clean --repo=repo build-dir packaging/flatpak/io.github.ripper-rs.r1pper.yml
 
       - name: Bundle single-file flatpak
@@ -247,8 +246,6 @@ jobs:
           flatpak build-bundle repo dist/flatpak/${{ env.BINARY_NAME }}-linux-x86_64.flatpak io.github.ripper-rs.r1pper
 
       - name: Upload flatpak bundle
-        # Attached to the GitHub release for people who don't use Flathub:
-        #   flatpak install ./r1pper-linux-x86_64.flatpak
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.BINARY_NAME }}-linux-flatpak
